@@ -31,7 +31,7 @@ if "messages" not in st.session_state:
 if "context" not in st.session_state:
     st.session_state["context"] = {}
 
-backend_url = "http://localhost:8000/chat"
+backend_url = "https://tailortalk-pspc.onrender.com/chat"
 
 st.write("Ask me to book a meeting, check your calendar, or find a free slot!")
 
