@@ -20,10 +20,13 @@ app.get('/health', (req, res) => {
 app.post('/chat', async (req, res) => {
   const { message, context } = req.body;
   try {
+    const now = new Date();
+    const todayISO = now.toISOString().split('T')[0]; // e.g., '2024-06-26'
     // Use Gemini API to extract intent and details
     const model = genAI.getGenerativeModel({ model: 'models/gemini-2.0-flash' });
     const prompt = `
-You are a helpful AI assistant for booking meetings. Extract the user's intent, date, time, and any other details from the following message.
+You are a helpful AI assistant for booking meetings. Today's date is ${todayISO}.
+Extract the user's intent, date, time, and any other details from the following message.
 If the message is ambiguous, do your best to guess, but set any missing fields to null and add a clarifying question.
 Always return a valid JSON object with these fields:
 - intent: (book_meeting, check_availability, etc.)
