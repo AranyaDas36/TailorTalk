@@ -3,6 +3,7 @@ const cors = require('cors');
 const dotenv = require('dotenv');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const { parse, parseISO, addMinutes, format, isValid } = require('date-fns');
+const chrono = require('chrono-node');
 const { isSlotFree, bookEvent, suggestNextFreeSlot } = require('./calendar');
 
 dotenv.config();
@@ -20,10 +21,9 @@ app.get('/health', (req, res) => {
 app.post('/chat', async (req, res) => {
   const { message, context } = req.body;
   try {
+    // Add today's date to the prompt for Gemini context
     const now = new Date();
-    const todayISO = now.toISOString().split('T')[0]; // e.g., '2024-06-26'
-    // Use Gemini API to extract intent and details
-    const model = genAI.getGenerativeModel({ model: 'models/gemini-2.0-flash' });
+    const todayISO = now.toISOString().split('T')[0];
     const prompt = `
 You are a helpful AI assistant for booking meetings. Today's date is ${todayISO}.
 Extract the user's intent, date, time, and any other details from the following message.
@@ -39,6 +39,7 @@ Always return a valid JSON object with these fields:
 User message: "${message}"
 `;
 
+    const model = genAI.getGenerativeModel({ model: 'models/gemini-2.0-flash' });
     const result = await model.generateContent(prompt);
     const text = result.response.text();
 
@@ -53,6 +54,14 @@ User message: "${message}"
         response: "Sorry, I couldn't understand the Gemini response.",
         context,
       });
+    }
+
+    // Robustly resolve natural language dates using chrono-node
+    if (info.date) {
+      const parsed = chrono.parseDate(info.date, new Date());
+      if (parsed) {
+        info.date = parsed.toISOString().split('T')[0];
+      }
     }
 
     // Clarification needed
@@ -169,19 +178,13 @@ User message: "${message}"
       context,
     });
   } catch (error) {
-    // Handle Gemini API errors (including quota exceeded)
-    if (
-      error.message &&
-      error.message.includes('ResourceExhausted')
-    ) {
-      return res.json({
-        response: "You have exceeded your Gemini API quota. Please try again later.",
-        context,
-      });
+    let msg = `Sorry, there was an error: ${error.message}`;
+    if (error.message && error.message.includes('503')) {
+      msg = "Sorry, the AI model is temporarily overloaded. Please try again in a few minutes.";
     }
-    return res.json({
-      response: `Sorry, there was an error: ${error.message}`,
-      context,
+    res.json({
+      response: msg,
+      context
     });
   }
 });

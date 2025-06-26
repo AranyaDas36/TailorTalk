@@ -8,6 +8,7 @@
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
+    "chrono-node": "^2.8.3",
     "cors": "^2.8.5",
     "date-fns": "^3.6.0",
     "dotenv": "^16.4.5",
