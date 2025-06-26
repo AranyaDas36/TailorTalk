@@ -7,4 +7,5 @@ google-auth-httplib2
 google-auth-oauthlib
 openai
 dateparser 
-google-generativeai
+google-generativeai==0.8.5
+python-dotenv
