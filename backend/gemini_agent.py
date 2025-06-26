@@ -2,7 +2,7 @@ import google.generativeai as genai
 import os
 import json
 
-genai.configure(api_key="AIzaSyAOjQBOTxC7fbKSvb3yfa1im_u1Xv1aPig")
+genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 
 def extract_booking_info(user_message, chat_history=None):
     prompt = f"""

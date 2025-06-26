@@ -14,7 +14,7 @@ import json
 # Context will be passed as a dict (session) from the backend
 
 # Set your Gemini API key
-genai.configure(api_key="AIzaSyAOjQBOTxC7fbKSvb3yfa1im_u1Xv1aPig")
+genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 
 def parse_date_and_time(msg: str):
     dt = dateparser.parse(msg, settings={"PREFER_DATES_FROM": "future"})

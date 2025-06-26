@@ -6,7 +6,7 @@ import requests
 from mycalendar.calendar_local import get_free_slots, book_event
 
 st.set_page_config(page_title="TailorTalk AI Booking Agent")
-st.title("🤖 My AI Scheduler Agent")
+st.title("🤖 My AI Agent")
 
 # Example prompts and keywords for user reference
 with st.expander("💡 Example prompts and keywords (click to expand)", expanded=True):
