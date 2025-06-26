@@ -19,10 +19,12 @@ app.get('/health', (req, res) => {
 });
 
 app.post('/chat', async (req, res) => {
-  const { message, context = [] } = req.body;
+  let { message, context } = req.body;
+  // Ensure context is always an array
+  if (!Array.isArray(context)) context = [];
   try {
     // Build chat history for Gemini
-    const history = (context || []).map(msg =>
+    const history = context.map(msg =>
       ({ role: msg.sender === 'user' ? 'user' : 'model', parts: [{ text: msg.text }] })
     );
     history.push({ role: 'user', parts: [{ text: message }] });
@@ -36,7 +38,7 @@ app.post('/chat', async (req, res) => {
 
     // Add the new message to the context for future turns
     const newContext = [
-      ...(context || []),
+      ...context,
       { sender: 'user', text: message },
       { sender: 'bot', text: geminiResponse }
     ];
