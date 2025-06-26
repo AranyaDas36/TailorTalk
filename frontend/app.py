@@ -17,7 +17,6 @@ if "context" not in st.session_state:
 
 backend_url = "https://tailortalk-node-backend.onrender.com/chat"
 
-st.write("Ask me to book a meeting, check your calendar, or find a free slot!")
 
 with st.form(key="chat_form", clear_on_submit=True):
     user_input = st.text_input("You:", key="input_box")
