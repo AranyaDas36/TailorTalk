@@ -19,163 +19,31 @@ app.get('/health', (req, res) => {
 });
 
 app.post('/chat', async (req, res) => {
-  const { message, context } = req.body;
+  const { message, context = [] } = req.body;
   try {
-    // Add today's date to the prompt for Gemini context
-    const now = new Date();
-    const todayISO = now.toISOString().split('T')[0];
-    const prompt = `
-You are a helpful AI assistant for booking meetings. Today's date is ${todayISO}.
-Extract the user's intent, date, time, and any other details from the following message.
-If the message is ambiguous, do your best to guess, but set any missing fields to null and add a clarifying question.
-Always return a valid JSON object with these fields:
-- intent: (book_meeting, check_availability, etc.)
-- date: (ISO 8601 format or null)
-- time: (24h format 'HH:mm' or null)
-- duration: (in minutes or null)
-- clarification_needed: (true/false)
-- clarification_question: (if needed, otherwise null)
-
-User message: "${message}"
-`;
+    // Build chat history for Gemini
+    const history = (context || []).map(msg =>
+      ({ role: msg.sender === 'user' ? 'user' : 'model', parts: [{ text: msg.text }] })
+    );
+    history.push({ role: 'user', parts: [{ text: message }] });
 
     const model = genAI.getGenerativeModel({ model: 'models/gemini-2.0-flash' });
-    const result = await model.generateContent(prompt);
-    const text = result.response.text();
+    const result = await model.generateContent({
+      contents: history
+    });
 
-    // Try to parse JSON from the response
-    let info;
-    try {
-      const jsonStart = text.indexOf('{');
-      const jsonEnd = text.lastIndexOf('}') + 1;
-      info = JSON.parse(text.substring(jsonStart, jsonEnd));
-    } catch (err) {
-      return res.json({
-        response: "Sorry, I couldn't understand the Gemini response.",
-        context,
-      });
-    }
+    const geminiResponse = result.response.text();
 
-    // Robustly resolve natural language dates using chrono-node
-    if (info.date) {
-      const parsed = chrono.parseDate(info.date, new Date());
-      if (parsed) {
-        info.date = parsed.toISOString().split('T')[0];
-      }
-    }
+    // Add the new message to the context for future turns
+    const newContext = [
+      ...(context || []),
+      { sender: 'user', text: message },
+      { sender: 'bot', text: geminiResponse }
+    ];
 
-    // Clarification needed
-    if (info.clarification_needed) {
-      return res.json({
-        response: info.clarification_question || "Can you clarify your request?",
-        context,
-      });
-    }
-
-    // Booking intent
-    if (info.intent === 'book_meeting') {
-      const dateStr = info.date;
-      const timeStr = info.time;
-      const duration = info.duration || 60; // default 60 mins
-
-      if (!dateStr && !timeStr) {
-        return res.json({ response: "What day and time would you like to book? (e.g., 'tomorrow at 2pm')", context });
-      }
-      if (!dateStr) {
-        return res.json({ response: "What day would you like to book? (e.g., 'tomorrow', 'Friday', '27th June')", context });
-      }
-      if (!timeStr) {
-        return res.json({ response: `What time on ${dateStr} would you like to book? (e.g., '2pm', '14:00')`, context });
-      }
-
-      // Parse date and time
-      let start;
-      try {
-        start = parseISO(`${dateStr}T${timeStr}`);
-        if (!isValid(start)) {
-          // Try parsing as natural language
-          start = parse(`${dateStr} ${timeStr}`, 'yyyy-MM-dd HH:mm', new Date());
-        }
-        if (!isValid(start)) throw new Error('Invalid time value');
-      } catch {
-        return res.json({ response: "Sorry, I couldn't understand the date and time. Please try again with a format like '27th June at 2pm' or 'tomorrow at 14:00'.", context });
-      }
-      const end = addMinutes(start, parseInt(duration));
-      const result = bookEvent(start, end);
-
-      if (result.status === "success") {
-        return res.json({
-          response: `Booked your meeting for ${format(start, 'PPpp')} to ${format(end, 'p')}! Event ID: ${result.event_id}`,
-          context,
-        });
-      } else {
-        const suggestion = suggestNextFreeSlot(start, end);
-        if (suggestion) {
-          return res.json({
-            response: `Could not book: Time slot is already booked. Next available slot: ${format(parseISO(suggestion.start), 'PPpp')} to ${format(parseISO(suggestion.end), 'p')}. Would you like to book this?`,
-            context,
-          });
-        } else {
-          return res.json({
-            response: "Could not book: Time slot is already booked and no free slots are available today.",
-            context,
-          });
-        }
-      }
-    }
-
-    // Availability intent
-    if (info.intent === 'check_availability') {
-      const dateStr = info.date;
-      const timeStr = info.time;
-      const duration = info.duration || 60;
-
-      if (!dateStr && !timeStr) {
-        return res.json({ response: "For which day and time should I check your availability? (e.g., 'Friday at 3pm')", context });
-      }
-      if (!dateStr) {
-        return res.json({ response: "For which day should I check your availability? (e.g., 'Friday', 'tomorrow')", context });
-      }
-      if (!timeStr) {
-        return res.json({ response: `For what time on ${dateStr} should I check your availability? (e.g., '2-4pm', '14:00')`, context });
-      }
-
-      let start;
-      try {
-        start = parseISO(`${dateStr}T${timeStr}`);
-        if (!isValid(start)) {
-          start = parse(`${dateStr} ${timeStr}`, 'yyyy-MM-dd HH:mm', new Date());
-        }
-        if (!isValid(start)) throw new Error('Invalid time value');
-      } catch {
-        return res.json({ response: "Sorry, I couldn't understand the date and time. Please try again with a format like '27th June at 2pm' or 'tomorrow at 14:00'.", context });
-      }
-      const end = addMinutes(start, parseInt(duration));
-      if (isSlotFree(start, end)) {
-        return res.json({
-          response: `You are free from ${format(start, 'PPpp')} to ${format(end, 'p')}!`,
-          context,
-        });
-      } else {
-        const suggestion = suggestNextFreeSlot(start, end);
-        if (suggestion) {
-          return res.json({
-            response: `You are busy at that time. Next available slot: ${format(parseISO(suggestion.start), 'PPpp')} to ${format(parseISO(suggestion.end), 'p')}.`,
-            context,
-          });
-        } else {
-          return res.json({
-            response: "You are busy at that time and no free slots are available today.",
-            context,
-          });
-        }
-      }
-    }
-
-    // Fallback
-    return res.json({
-      response: "I'm here to help you with your calendar. Try asking to book a meeting or check availability!",
-      context,
+    res.json({
+      response: geminiResponse,
+      context: newContext
     });
   } catch (error) {
     let msg = `Sorry, there was an error: ${error.message}`;
