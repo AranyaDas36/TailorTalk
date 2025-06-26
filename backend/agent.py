@@ -7,16 +7,19 @@ import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 import streamlit as st
 import requests
+import google.generativeai as genai
+from backend.gemini_agent import extract_booking_info
+import json
 
 # Context will be passed as a dict (session) from the backend
 
+# Set your Gemini API key
+genai.configure(api_key="AIzaSyAOjQBOTxC7fbKSvb3yfa1im_u1Xv1aPig")
+
 def parse_date_and_time(msg: str):
-    # Try to extract date and time separately
     dt = dateparser.parse(msg, settings={"PREFER_DATES_FROM": "future"})
     if not dt:
         return None, None, None
-    # Check if a time is mentioned
-    has_time = dt.hour != 0 or dt.minute != 0
     # Try to find a time range (e.g., '3-5pm')
     range_match = re.search(r'(\d{1,2})\s*[-to]+\s*(\d{1,2}) ?pm', msg)
     if range_match:
@@ -25,50 +28,57 @@ def parse_date_and_time(msg: str):
         start = dt.replace(hour=start_hour, minute=0)
         end = dt.replace(hour=end_hour, minute=0)
         return start, end, True
-    if has_time:
-        return dt, dt + timedelta(hours=1), True
-    else:
+    # If the time is exactly midnight (00:00) or 00:00:00, treat as missing
+    if dt.hour == 0 and dt.minute == 0 and dt.second == 0:
         return dt, None, False
+    # If the user said 'now', treat as missing unless 'now' is in the message
+    if (dt - datetime.now()).total_seconds() < 60 and 'now' not in msg:
+        return dt, None, False
+    # Otherwise, default to 1 hour meeting if no end time
+    return dt, dt + timedelta(hours=1), True
 
 # The context dict will be passed in and returned (for session state)
 def process_user_message(message: str, context: dict = None):
     if context is None:
         context = {}
-    msg = message.lower().strip()
-    booking_keywords = ["book", "schedule", "meeting", "call"]
-    yes_keywords = ["yes", "book this", "ok", "sure"]
-    avail_keywords = ["free time", "availability", "available", "free", "busy"]
-
-    # If user says yes and a suggested slot exists, book it
-    if any(word == msg for word in yes_keywords) and context.get("suggested_slot"):
-        slot = context.pop("suggested_slot")
-        start = dateparser.parse(slot["start"])
-        end = dateparser.parse(slot["end"])
-        result = book_event(start, end, summary="Meeting via TailorTalk")
-        if result["status"] == "success":
-            return f"Booked your meeting for {start.strftime('%A, %d %B %Y at %I:%M %p')} to {end.strftime('%I:%M %p')}! Event ID: {result['event_id']}", context
-        else:
-            return f"Could not book: {result['message']}", context
-
+    info = extract_booking_info(message)
+    # Clarification needed
+    if info.get("clarification_needed"):
+        return info.get("clarification_question", "Can you clarify your request?"), context
     # Booking intent
-    if any(word in msg for word in booking_keywords) or context.get("pending_booking"):
-        date, end, has_time = parse_date_and_time(msg)
-        if not date:
-            context["pending_booking"] = True
+    if info.get("intent") == "book_meeting":
+        date_str = info.get("date")
+        time_str = info.get("time")
+        duration = info.get("duration")
+        if not date_str:
             return "What day would you like to book? (e.g., 'today', 'tomorrow', 'Friday')", context
-        if not has_time:
-            context["pending_booking"] = True
+        if not time_str:
             # Make the follow-up specific to the date
-            if date.date() == datetime.now().date():
-                return "What time today would you like to book? (e.g., 2pm, 3pm, etc.)", context
-            elif date.date() == (datetime.now() + timedelta(days=1)).date():
-                return "What time tomorrow would you like to book? (e.g., 2pm, 3pm, etc.)", context
+            try:
+                date = dateparser.parse(date_str, settings={"PREFER_DATES_FROM": "future"})
+            except Exception:
+                date = None
+            if date:
+                if date.date() == datetime.now().date():
+                    return "What time today would you like to book? (e.g., 2pm, 3pm, etc.)", context
+                elif date.date() == (datetime.now() + timedelta(days=1)).date():
+                    return "What time tomorrow would you like to book? (e.g., 2pm, 3pm, etc.)", context
+                else:
+                    return f"What time on {date.strftime('%A, %d %B %Y')} would you like to book? (e.g., 2pm, 3pm, etc.)", context
             else:
-                return f"What time on {date.strftime('%A, %d %B %Y')} would you like to book? (e.g., 2pm, 3pm, etc.)", context
-        context.pop("pending_booking", None)
-        start = date
-        if not end:
-            end = start + timedelta(hours=1)
+                return "What time would you like to book?", context
+        # Parse date and time
+        dt_str = f"{date_str} {time_str}"
+        start = dateparser.parse(dt_str, settings={"PREFER_DATES_FROM": "future"})
+        if not start:
+            return "Sorry, I couldn't understand the date and time. Please try again.", context
+        end = start + timedelta(hours=1)
+        if duration:
+            try:
+                mins = int(duration)
+                end = start + timedelta(minutes=mins)
+            except Exception:
+                pass
         result = book_event(start, end, summary="Meeting via TailorTalk")
         if result["status"] == "success":
             return (
@@ -88,25 +98,32 @@ def process_user_message(message: str, context: dict = None):
                 )
             else:
                 return "Could not book: Time slot is already booked and no free slots are available today.", context
-
     # Availability intent
-    if any(word in msg for word in avail_keywords) or context.get("pending_availability"):
-        date, end, has_time = parse_date_and_time(msg)
-        if not date:
-            context["pending_availability"] = True
+    if info.get("intent") == "check_availability":
+        date_str = info.get("date")
+        time_str = info.get("time")
+        if not date_str:
             return "For which day should I check your availability? (e.g., 'Friday', 'today', 'tomorrow')", context
-        if not has_time:
-            context["pending_availability"] = True
-            if date.date() == datetime.now().date():
-                return "For what time today should I check your availability? (e.g., 2-4pm)", context
-            elif date.date() == (datetime.now() + timedelta(days=1)).date():
-                return "For what time tomorrow should I check your availability? (e.g., 2-4pm)", context
+        if not time_str:
+            try:
+                date = dateparser.parse(date_str, settings={"PREFER_DATES_FROM": "future"})
+            except Exception:
+                date = None
+            if date:
+                if date.date() == datetime.now().date():
+                    return "For what time today should I check your availability? (e.g., 2-4pm)", context
+                elif date.date() == (datetime.now() + timedelta(days=1)).date():
+                    return "For what time tomorrow should I check your availability? (e.g., 2-4pm)", context
+                else:
+                    return f"For what time on {date.strftime('%A, %d %B %Y')} should I check your availability? (e.g., 2-4pm)", context
             else:
-                return f"For what time on {date.strftime('%A, %d %B %Y')} should I check your availability? (e.g., 2-4pm)", context
-        context.pop("pending_availability", None)
-        start = date
-        if not end:
-            end = start + timedelta(hours=1)
+                return "For what time should I check your availability?", context
+        # Parse date and time
+        dt_str = f"{date_str} {time_str}"
+        start = dateparser.parse(dt_str, settings={"PREFER_DATES_FROM": "future"})
+        if not start:
+            return "Sorry, I couldn't understand the date and time. Please try again.", context
+        end = start + timedelta(hours=1)
         busy = get_free_slots(start, end)
         if not busy:
             return (
@@ -124,13 +141,30 @@ def process_user_message(message: str, context: dict = None):
                 )
             else:
                 return "You are busy at that time and no free slots are available today.", context
-
     # Fallback
     return (
         "I'm here to help you with your calendar. Try asking to book a meeting or check availability!\n"
         "Example: 'Book a meeting for tomorrow afternoon' or 'Do I have any free time this Friday?'",
         context
     )
+
+def extract_booking_info(user_message, chat_history=None):
+    prompt = f"""
+You are a helpful AI assistant for booking meetings. Extract the user's intent, date, time, and any other details from the following message. If the message is ambiguous, ask a clarifying question.
+
+User message: "{user_message}"
+
+Return a JSON object with:
+- intent: (book_meeting, check_availability, etc.)
+- date: (ISO format or natural language)
+- time: (if present)
+- duration: (if present)
+- clarification_needed: (true/false)
+- clarification_question: (if needed)
+"""
+    model = genai.GenerativeModel("gemini-pro")
+    response = model.generate_content(prompt)
+    return response.text
 
 st.set_page_config(page_title="TailorTalk AI Booking Agent")
 st.title("🤖 My AI Scheduler Agent")
