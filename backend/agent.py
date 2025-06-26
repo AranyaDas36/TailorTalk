@@ -162,7 +162,7 @@ Return a JSON object with:
 - clarification_needed: (true/false)
 - clarification_question: (if needed)
 """
-    model = genai.GenerativeModel("gemini-pro")
+    model = genai.GenerativeModel("models/gemini-1.5-pro-latest")
     response = model.generate_content(prompt)
     return response.text
 
