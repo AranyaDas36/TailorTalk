@@ -1,1 +1,0 @@
-# This file marks the mycalendar directory as a package. 

@@ -3,35 +3,19 @@ import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 import streamlit as st
 import requests
-from mycalendar.calendar_local import get_free_slots, book_event
 
 st.set_page_config(page_title="TailorTalk AI Booking Agent")
 st.title("🤖 My AI Agent")
 
 # Example prompts and keywords for user reference
-with st.expander("💡 Example prompts and keywords (click to expand)", expanded=True):
-    st.markdown("""
-    **You can try prompts like:**
-    - Book a meeting for tomorrow afternoon
-    - Schedule a call tomorrow at 3pm
-    - Book a meeting on Friday at 5pm
-    - I want to schedule a meeting for 27th June at 5pm
-    - Book a slot for me next Monday at 2pm
-    - Do I have any free time this Friday?
-    - Am I available tomorrow afternoon?
-    - Check my availability for today between 2-4pm
-    - What time slots are free next week?
-    
-    **Keywords:**
-    - book, schedule, meeting, call, availability, free time, available
-    """)
+
 
 if "messages" not in st.session_state:
     st.session_state["messages"] = []
 if "context" not in st.session_state:
     st.session_state["context"] = {}
 
-backend_url = "https://tailortalk-pspc.onrender.com/chat"
+backend_url = "https://tailortalk-node-backend.onrender.com/chat"
 
 st.write("Ask me to book a meeting, check your calendar, or find a free slot!")
 
