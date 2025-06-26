@@ -23,17 +23,17 @@ app.post('/chat', async (req, res) => {
     // Use Gemini API to extract intent and details
     const model = genAI.getGenerativeModel({ model: 'models/gemini-2.0-flash' });
     const prompt = `
-You are a helpful AI assistant for booking meetings. Extract the user's intent, date, time, and any other details from the following message. If the message is ambiguous, ask a clarifying question.
+You are a helpful AI assistant for booking meetings. Extract the user's intent, date, time, and any other details from the following message.
+If the message is ambiguous, do your best to guess, but set any missing fields to null and add a clarifying question.
+Always return a valid JSON object with these fields:
+- intent: (book_meeting, check_availability, etc.)
+- date: (ISO 8601 format or null)
+- time: (24h format 'HH:mm' or null)
+- duration: (in minutes or null)
+- clarification_needed: (true/false)
+- clarification_question: (if needed, otherwise null)
 
 User message: "${message}"
-
-Return a JSON object with:
-- intent: (book_meeting, check_availability, etc.)
-- date: (ISO format or natural language)
-- time: (if present)
-- duration: (if present, in minutes)
-- clarification_needed: (true/false)
-- clarification_question: (if needed)
 `;
 
     const result = await model.generateContent(prompt);
@@ -66,11 +66,14 @@ Return a JSON object with:
       const timeStr = info.time;
       const duration = info.duration || 60; // default 60 mins
 
+      if (!dateStr && !timeStr) {
+        return res.json({ response: "What day and time would you like to book? (e.g., 'tomorrow at 2pm')", context });
+      }
       if (!dateStr) {
-        return res.json({ response: "What day would you like to book?", context });
+        return res.json({ response: "What day would you like to book? (e.g., 'tomorrow', 'Friday', '27th June')", context });
       }
       if (!timeStr) {
-        return res.json({ response: "What time would you like to book?", context });
+        return res.json({ response: `What time on ${dateStr} would you like to book? (e.g., '2pm', '14:00')`, context });
       }
 
       // Parse date and time
@@ -81,8 +84,9 @@ Return a JSON object with:
           // Try parsing as natural language
           start = parse(`${dateStr} ${timeStr}`, 'yyyy-MM-dd HH:mm', new Date());
         }
+        if (!isValid(start)) throw new Error('Invalid time value');
       } catch {
-        return res.json({ response: "Sorry, I couldn't understand the date and time. Please try again.", context });
+        return res.json({ response: "Sorry, I couldn't understand the date and time. Please try again with a format like '27th June at 2pm' or 'tomorrow at 14:00'.", context });
       }
       const end = addMinutes(start, parseInt(duration));
       const result = bookEvent(start, end);
@@ -114,11 +118,14 @@ Return a JSON object with:
       const timeStr = info.time;
       const duration = info.duration || 60;
 
+      if (!dateStr && !timeStr) {
+        return res.json({ response: "For which day and time should I check your availability? (e.g., 'Friday at 3pm')", context });
+      }
       if (!dateStr) {
-        return res.json({ response: "For which day should I check your availability?", context });
+        return res.json({ response: "For which day should I check your availability? (e.g., 'Friday', 'tomorrow')", context });
       }
       if (!timeStr) {
-        return res.json({ response: "For what time should I check your availability?", context });
+        return res.json({ response: `For what time on ${dateStr} should I check your availability? (e.g., '2-4pm', '14:00')`, context });
       }
 
       let start;
@@ -127,8 +134,9 @@ Return a JSON object with:
         if (!isValid(start)) {
           start = parse(`${dateStr} ${timeStr}`, 'yyyy-MM-dd HH:mm', new Date());
         }
+        if (!isValid(start)) throw new Error('Invalid time value');
       } catch {
-        return res.json({ response: "Sorry, I couldn't understand the date and time. Please try again.", context });
+        return res.json({ response: "Sorry, I couldn't understand the date and time. Please try again with a format like '27th June at 2pm' or 'tomorrow at 14:00'.", context });
       }
       const end = addMinutes(start, parseInt(duration));
       if (isSlotFree(start, end)) {
