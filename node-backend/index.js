@@ -21,7 +21,7 @@ app.post('/chat', async (req, res) => {
   const { message, context } = req.body;
   try {
     // Use Gemini API to extract intent and details
-    const model = genAI.getGenerativeModel({ model: 'models/gemini-1.5-pro-latest' });
+    const model = genAI.getGenerativeModel({ model: 'models/gemini-2.0-flash' });
     const prompt = `
 You are a helpful AI assistant for booking meetings. Extract the user's intent, date, time, and any other details from the following message. If the message is ambiguous, ask a clarifying question.
 
