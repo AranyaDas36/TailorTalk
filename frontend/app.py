@@ -7,6 +7,12 @@ import requests
 st.set_page_config(page_title="TailorTalk AI Booking Agent")
 st.title("🤖 My AI Agent")
 
+# Add Clear Chat button
+if st.button("Clear Chat"):
+    st.session_state["messages"] = []
+    st.session_state["context"] = {}
+    st.rerun()
+
 # Example prompts and keywords for user reference
 
 
@@ -25,7 +31,8 @@ with st.form(key="chat_form", clear_on_submit=True):
         msg = user_input.strip()
         st.session_state["messages"].append(("user", msg))
         try:
-            resp = requests.post(backend_url, json={"message": msg, "context": st.session_state["context"]})
+            with st.spinner("Getting response..."):
+                resp = requests.post(backend_url, json={"message": msg, "context": st.session_state["context"]})
             if resp.ok:
                 data = resp.json()
                 bot_msg = data.get("response", "(No response from bot)")
@@ -40,4 +47,11 @@ for sender, msg in st.session_state["messages"]:
     if sender == "user":
         st.markdown(f"**You:** {msg}")
     else:
-        st.markdown(f"**TailorTalk:** {msg}") 
+        st.markdown(f"**TailorTalk:** {msg}")
+
+# Show Clear Chat button at the bottom only if there are messages
+if st.session_state["messages"]:
+    if st.button("Clear Chat", key="clear_chat_bottom"):
+        st.session_state["messages"] = []
+        st.session_state["context"] = {}
+        st.rerun() 
